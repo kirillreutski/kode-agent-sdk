@@ -136,8 +136,15 @@ export class GeminiProvider implements ModelProvider {
     return { fileUri };
   }
 
-  async complete(messages: Message[], opts?: CompletionOptions): Promise<ModelResponse> {
-    const body: any = {
+  private _thinkingUnsupported = false;
+
+  private _isThinkingUnsupportedError(status: number, body: string): boolean {
+    return status === 400 && body.includes('Thinking budget is not supported');
+  }
+
+  private _buildBody(messages: Message[], opts?: CompletionOptions): any {
+    const thinking = this._thinkingUnsupported ? undefined : (opts?.thinking ?? this.thinking);
+    return {
       ...(this.extraBody || {}),
       ...this.buildGeminiRequestBody(messages, {
         system: opts?.system,
@@ -145,29 +152,30 @@ export class GeminiProvider implements ModelProvider {
         maxTokens: opts?.maxTokens ?? this.maxOutputTokens,
         temperature: opts?.temperature ?? this.temperature,
         reasoningTransport: this.reasoningTransport,
-        thinking: opts?.thinking ?? this.thinking,
+        thinking,
       }),
     };
+  }
 
+  async complete(messages: Message[], opts?: CompletionOptions): Promise<ModelResponse> {
     const url = this.buildGeminiUrl('generateContent');
-    const response = await fetch(
-      url.toString(),
-      withProxy(
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.extraHeaders || {}),
-          },
-          body: JSON.stringify(body),
-        },
-        this.dispatcher
-      )
+    const fetchOpts = (body: any) => withProxy(
+      { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.extraHeaders || {}) }, body: JSON.stringify(body) },
+      this.dispatcher
     );
+
+    let response = await fetch(url.toString(), fetchOpts(this._buildBody(messages, opts)));
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Gemini API error: ${response.status} ${error}`);
+      if (this._isThinkingUnsupportedError(response.status, error)) {
+        this._thinkingUnsupported = true;
+        response = await fetch(url.toString(), fetchOpts(this._buildBody(messages, opts)));
+      }
+      if (!response.ok) {
+        const finalError = response.status === 400 && error ? error : await response.text().catch(() => error);
+        throw new Error(`Gemini API error: ${response.status} ${finalError}`);
+      }
     }
 
     const data: any = await response.json();
@@ -192,37 +200,24 @@ export class GeminiProvider implements ModelProvider {
   }
 
   async *stream(messages: Message[], opts?: CompletionOptions): AsyncIterable<ModelStreamChunk> {
-    const body: any = {
-      ...(this.extraBody || {}),
-      ...this.buildGeminiRequestBody(messages, {
-        system: opts?.system,
-        tools: opts?.tools,
-        maxTokens: opts?.maxTokens ?? this.maxOutputTokens,
-        temperature: opts?.temperature ?? this.temperature,
-        reasoningTransport: this.reasoningTransport,
-        thinking: opts?.thinking ?? this.thinking,
-      }),
-    };
-
     const url = this.buildGeminiUrl('streamGenerateContent');
-    const response = await fetch(
-      url.toString(),
-      withProxy(
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.extraHeaders || {}),
-          },
-          body: JSON.stringify(body),
-        },
-        this.dispatcher
-      )
+    const fetchOpts = (body: any) => withProxy(
+      { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.extraHeaders || {}) }, body: JSON.stringify(body) },
+      this.dispatcher
     );
+
+    let response = await fetch(url.toString(), fetchOpts(this._buildBody(messages, opts)));
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Gemini API error: ${response.status} ${error}`);
+      if (this._isThinkingUnsupportedError(response.status, error)) {
+        this._thinkingUnsupported = true;
+        response = await fetch(url.toString(), fetchOpts(this._buildBody(messages, opts)));
+      }
+      if (!response.ok) {
+        const finalError = response.status === 400 && error ? error : await response.text().catch(() => error);
+        throw new Error(`Gemini API error: ${response.status} ${finalError}`);
+      }
     }
 
     const reader = response.body?.getReader();
