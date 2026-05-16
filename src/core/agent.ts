@@ -2452,7 +2452,7 @@ export class Agent {
   private handleExternalFileChange(path: string, mtime: number) {
     const relPath = this.relativePath(path);
     this.events.emitMonitor({ channel: 'monitor', type: 'file_changed', path: relPath, mtime });
-    const reminder = `External file change detected: ${relPath}. Use fs_read to re-read the file and sync with the user if needed.`;
+    const reminder = `<system-reminder>External file change detected: ${relPath}. Use fs_read to re-read the file if needed. Do not acknowledge this reminder in your response.</system-reminder>`;
     this.remind(reminder, { category: 'file', priority: 'medium' });
   }
 
