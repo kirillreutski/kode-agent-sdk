@@ -123,7 +123,7 @@ export class PostgresStore implements ExtendedStore {
       // 表 3: tool_calls - 工具调用记录
       await client.query(`
         CREATE TABLE IF NOT EXISTS tool_calls (
-          id TEXT PRIMARY KEY,
+          id TEXT NOT NULL,
           agent_id TEXT NOT NULL,
           name TEXT NOT NULL,
           input JSONB NOT NULL,
@@ -138,6 +138,7 @@ export class PostgresStore implements ExtendedStore {
           created_at BIGINT NOT NULL,
           updated_at BIGINT NOT NULL,
           audit_trail JSONB NOT NULL,
+          PRIMARY KEY (agent_id, id),
           FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
         );
       `);
