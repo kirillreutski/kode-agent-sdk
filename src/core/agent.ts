@@ -1269,6 +1269,13 @@ export class Agent {
   }
 
   private async processToolCall(toolUse: { id: string; name: string; input: any }): Promise<ContentBlock | null> {
+    // Some providers / fallback models emit tool names with surrounding whitespace (e.g. " fs_write"),
+    // which misses the exact-name registry lookup and surfaces as "Tool not found" — the agent can then
+    // never call its tools and loops until timeout. Normalize the name before resolving so the lookup,
+    // the call record, and any error message all agree on the trimmed name.
+    if (typeof toolUse.name === 'string' && toolUse.name !== toolUse.name.trim()) {
+      toolUse = { ...toolUse, name: toolUse.name.trim() };
+    }
     const tool = this.tools.get(toolUse.name);
     const record = this.registerToolRecord(toolUse);
     this.events.emitProgress({ channel: 'progress', type: 'tool:start', call: this.snapshotToolRecord(record.id) });
